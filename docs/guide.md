@@ -1,0 +1,1 @@
+npx create-next-app -e with-tailwindcss web3-ebay-clone
