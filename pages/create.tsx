@@ -14,6 +14,7 @@ import {
 import { useRouter } from "next/router";
 import { NFT, NATIVE_TOKEN_ADDRESS, NATIVE_TOKENS } from "@thirdweb-dev/sdk";
 import network from "../utils/network";
+import toast from "react-hot-toast";
 
 type Props = {};
 
@@ -80,10 +81,12 @@ function create({}: Props) {
         {
           onSuccess(data, variables, context) {
             console.log("Success:", data, variables, context);
+            toast.success("Direct Listing successfully created!");
             router.push("/");
           },
           onError(error, variables, context) {
             console.log("Error:", error, variables, context);
+            toast.error("Error: Creating Direct Listing failed!");
             router.push("/");
           },
         }
@@ -104,10 +107,12 @@ function create({}: Props) {
         {
           onSuccess(data, variables, context) {
             console.log("Success:", data, variables, context);
+            toast.success("Auction Listing successfully created!");
             router.push("/");
           },
           onError(error, variables, context) {
             console.log("Error:", error, variables, context);
+            toast.error("Error: Creating Auction Listing failed!");
             router.push("/");
           },
         }

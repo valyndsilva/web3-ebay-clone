@@ -3,6 +3,7 @@ import { Header } from "../components";
 import { useContract, useAddress } from "@thirdweb-dev/react";
 import Image from "next/image";
 import { useRouter } from "next/router";
+import toast from "react-hot-toast";
 
 type Props = {};
 
@@ -38,14 +39,17 @@ function addItem({}: Props) {
     };
 
     try {
+      toast("Minting NFT...");
       const tx = await contract.mintTo(address, metadata);
       const receipt = tx.receipt; // transaction receipt
       const tokenId = tx.id; //id of NFT minted
       const nft = await tx.data(); //(optional) fetch details of minted NFT
       console.log(receipt, tokenId, nft);
+      toast.success("NFT minted successfully!");
       router.push("/");
     } catch (error) {
       console.error(error);
+      toast.error("NFT minting failed!");
     }
   };
   return (
