@@ -1453,6 +1453,7 @@ function LisitingPage({}: Props) {
 export default LisitingPage;
 
 ```
+
 Open a Direct Listings page:
 When you Make an Offer for ex: 0.00002 and click "Offer"> Buyout price not met, making an offer > Metamask prompts > Confirm > Approve token spend > Confirm
 
@@ -1918,6 +1919,7 @@ export default Home;
 ```
 import { UserCircleIcon } from "@heroicons/react/24/solid";
 import {
+  useAddress,
   MediaRenderer,
   useContract,
   useListing,
@@ -1927,7 +1929,6 @@ import {
   useMakeOffer,
   useOffers,
   useMakeBid,
-  useAddress,
   useAcceptDirectListingOffer,
 } from "@thirdweb-dev/react";
 import { ListingType, NATIVE_TOKENS } from "@thirdweb-dev/sdk";
@@ -1941,43 +1942,65 @@ import toast from "react-hot-toast";
 type Props = {};
 
 function LisitingPage({}: Props) {
+  // Next JS Router hook to redirect to other pages and to grab the query from the URL (listingId)
   const router = useRouter();
-  const address = useAddress();
 
+  // De-construct listingId out of the router.query.
+  // This means that if the user visits /listing/0 then the listingId will be 0.
+  // If the user visits /listing/1 then the listingId will be 1.
+  // We do some weird TypeScript casting, because Next.JS thinks listingId can be an array for some reason.
   const { listingId } = router.query as { listingId: string };
+
+  // Store the bid amount the user entered into the bidding textbox
   const [bidAmount, setBidAmount] = useState("");
-  const [minimumNextBid, setMinimumNextBid] = useState<{
-    displayValue: string;
-    symbol: string;
-  }>();
 
-  const networkMismatch = useNetworkMismatch();
-  const [, switchNetwork] = useNetwork();
-
+  // Initialize the marketplace contract
   const { contract: marketplaceContract } = useContract(
     process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT,
     "marketplace"
   );
 
+  // useListing is used to get a specific listing from the marketplace
+  const { data: listing, isLoading: isListingLoading } = useListing(
+    marketplaceContract,
+    listingId
+  );
+  console.log({ listing });
+
+  // Hook for checking whether the connected wallet is on the correct network specified by the desiredChainId passed to the <ThirdwebProvider />.
+  const isNetworkMismatched = useNetworkMismatch();
+  // Hook for getting metadata about the network the current wallet is connected to and switching networks
+  const [, switchNetwork] = useNetwork();
+
+  // Direct Listing Type:
+  const address = useAddress();
+  // console.log({ address });
+  // useBuyNow() is used to buy out an auction listing from your marketplace contract.
   const { mutate: buyNow } = useBuyNow(marketplaceContract);
+  // useMakeOffer is used to make an offer on direct or auction listing from your marketplace contract.
   const { mutate: makeOffer } = useMakeOffer(marketplaceContract);
+  // useOffers is used to get all the offers for a listing
   const { data: offers } = useOffers(marketplaceContract, listingId);
-  // console.log(offers);
+  console.log({ offers });
+
+  // Auction Listing Type:
+  const [minimumNextBid, setMinimumNextBid] = useState<{
+    displayValue: string;
+    symbol: string;
+  }>();
+  // useMakeBid is used to place a bid on an auction listing from your marketplace contract.
   const { mutate: makeBid } = useMakeBid(marketplaceContract);
+  // Accept an offer on a direct listing from an offeror, will accept the latest offer by the given offeror.
   const { mutate: acceptOffer } =
     useAcceptDirectListingOffer(marketplaceContract);
-  const {
-    data: listing,
-    isLoading,
-    error,
-  } = useListing(marketplaceContract, listingId);
 
+  // For Auction ListingType
   useEffect(() => {
     if (!listingId || !marketplaceContract || !listing) return;
     if (listing.type === ListingType.Auction) {
       fetchMinimumNextBid();
     }
-  }, [listingId, listing, marketplaceContract]);
+  }, [listingId, listing, marketplaceContract, bidAmount]);
 
   console.log(minimumNextBid);
 
@@ -1985,6 +2008,8 @@ function LisitingPage({}: Props) {
     if (!listingId || !marketplaceContract) return;
     const { displayValue, symbol } =
       await marketplaceContract.auction.getMinimumNextBid(listingId);
+    console.log(displayValue, symbol);
+
     setMinimumNextBid({
       displayValue: displayValue,
       symbol: symbol,
@@ -2008,23 +2033,26 @@ function LisitingPage({}: Props) {
 
   const buyNft = async () => {
     toast("Buying NFT...");
-    if (networkMismatch) {
+
+    // Check if user on correct network. If not switch to correct network.
+    if (isNetworkMismatched) {
       switchNetwork && switchNetwork(network);
       return;
     }
     if (!listingId || !marketplaceContract || !listing) return;
-    await buyNow(
+
+    buyNow(
       { id: listingId, buyAmount: 1, type: listing.type },
 
       {
         onSuccess(data, variables, context) {
-          // alert("NFT bought successfully!");
+          alert("NFT bought successfully!");
           toast.success("NFT bought successfully!");
           console.log("Success:", data, variables, context);
           router.replace("/");
         },
         onError(error, variables, context) {
-          // alert("ERROR: NFT  could not be bought!");
+          alert("ERROR: NFT  could not be bought!");
           toast.error("ERROR: NFT  could not be bought!");
           console.log("Error:", error, variables, context);
         },
@@ -2032,87 +2060,104 @@ function LisitingPage({}: Props) {
     );
   };
 
+  // Creating A Bid / Offer
   const createBidOrOffer = async () => {
     try {
       // Check if user on correct network. If not switch to correct network.
-      if (networkMismatch) {
+      if (isNetworkMismatched) {
         switchNetwork && switchNetwork(network);
         return;
       }
-      // Handle Direct Listing
+
+      // If the listing type is a direct listing, then we can create an offer.
       if (listing?.type === ListingType.Direct) {
+        console.log("Making Offer...");
+        // if buyout price is equal to bid amount then trigger "Buy now".
         if (
-          listing.buyoutPrice.toString() ===
-          ethers.utils.parseEther(bidAmount).toString()
+          ethers.utils.parseEther(bidAmount).toString() ===
+          listing.buyoutPrice.toString()
         ) {
           console.log("Buyout Price met, buying NFT...");
-          toast("Buyout Price met, buying NFT...");
+          alert("Buyout Price met, buying NFT...");
           buyNft();
           return;
+        } else {
+          // if buyout price is NOT equal to bid amount then trigger "make offer"
+          console.log("Buyout Price not met, making offer...");
+          alert("Buyout Price not met, making offer...");
+
+          // Create an offer on a direct listing:
+          makeOffer(
+            {
+              listingId: listingId, // The listing ID of the asset you want to offer on
+              quantity: 1, // The quantity of tokens you want to receive for this offer
+              pricePerToken: bidAmount, // The price you are willing to offer per token
+            },
+            {
+              onSuccess(data, variables, context) {
+                alert("Offer made successfully!");
+                toast.success("Offer made successfully!");
+                console.log("Success:", data, variables, context);
+                setBidAmount("");
+                router.replace("/");
+              },
+              onError(error, variables, context) {
+                alert("ERROR: Offer  could not be made!");
+                toast.error("ERROR: Offer  could not be made!");
+                console.log("Error:", error, variables, context);
+                router.replace("/");
+              },
+            }
+          );
         }
-        console.log("Buyout Price not met, making offer...");
-        toast("Buyout Price not met, making offer...");
-        await makeOffer(
-          {
-            quantity: 1,
-            listingId: listingId,
-            pricePerToken: bidAmount,
-          },
-          {
-            onSuccess(data, variables, context) {
-              // alert("Offer made successfully!");
-              toast.success("Offer made successfully!");
-              console.log("Success:", data, variables, context);
-              setBidAmount("");
-            },
-            onError(error, variables, context) {
-              // alert("ERROR: Offer  could not be made!");
-              toast.error("ERROR: Offer  could not be made!");
-              console.log("Error:", error, variables, context);
-            },
-          }
-        );
       }
-      // Handle Auction Listing
-      // If the user entered a bid amount that is equal to the buyout price it should trigger a buy now.
+
+      // If the listing type is an auction listing, then we can create a bid.
       if (listing?.type === ListingType.Auction) {
+        console.log("Making Bid...");
+        // if buyout price is equal to bid amount then trigger "Buy now".
         if (
-          listing.buyoutPrice.toString() ===
-          ethers.utils.parseEther(bidAmount).toString()
+          ethers.utils.parseEther(bidAmount).toString() ===
+          listing.buyoutPrice.toString()
         ) {
           console.log("Buyout Price met, buying NFT...");
-          toast("Buyout Price met, buying NFT...");
+          alert("Buyout Price met, buying NFT...");
           buyNft();
           return;
+        } else {
+          // if buyout price is NOT equal to bid amount then trigger "makeBid"
+          console.log("Buyout Price not met, making bid...");
+          alert("Buyout Price not met, making bid...");
+
+          makeBid(
+            {
+              listingId: listingId,
+              bid: bidAmount,
+            },
+            {
+              onSuccess(data, variables, context) {
+                alert("Bid made successfully!");
+                toast.success("Bid made successfully!");
+                console.log("Success:", data, variables, context);
+                setBidAmount("");
+                router.replace("/");
+              },
+              onError(error, variables, context) {
+                alert("ERROR: Bid  could not be made!");
+                toast.error("ERROR: Bid  could not be made!");
+                console.log("Error:", error, variables, context);
+                router.replace("/");
+              },
+            }
+          );
         }
-        console.log("Buyout Price not met, making bid...");
-        toast("Buyout Price not met, making bid...");
-        await makeBid(
-          {
-            listingId: listingId,
-            bid: bidAmount,
-          },
-          {
-            onSuccess(data, variables, context) {
-              // alert("Bid made successfully!");
-              toast.success("Bid made successfully!");
-              console.log("Success:", data, variables, context);
-              setBidAmount("");
-            },
-            onError(error, variables, context) {
-              // alert("ERROR: Bid  could not be made!");
-              toast.error("ERROR: Bid  could not be made!");
-              console.log("Error:", error, variables, context);
-            },
-          }
-        );
       }
     } catch (error) {
       console.error(error);
     }
   };
 
-  if (isLoading)
+  if (isListingLoading)
     return (
       <div>
         <Header />
@@ -2121,6 +2166,10 @@ function LisitingPage({}: Props) {
         </div>
       </div>
     );
+
+  if (!listingId || !marketplaceContract) {
+    return;
+  }
 
   if (!listing) {
     return <div>Listing not found!</div>;
@@ -2162,6 +2211,7 @@ function LisitingPage({}: Props) {
               Buy Now
             </button>
           </div>
+
           {/* If direct listing show offers here... */}
           {listing.type === ListingType.Direct && offers && (
             <div className="grid grid-cols-2 gap-y-2">
@@ -2177,7 +2227,7 @@ function LisitingPage({}: Props) {
                       "..." +
                       offer.offeror.slice(-5)}
                   </p>
-                  <div>
+                  <div className="flex items-center space-x-4">
                     <p
                       key={
                         offer.listingId +
@@ -2199,8 +2249,8 @@ function LisitingPage({}: Props) {
                             },
                             {
                               onSuccess(data, variables, context) {
-                                alert("Offer accepted successfully!");
-                                // toast.success("Offer accepted successfully!");
+                                // alert("Offer accepted successfully!");
+                                toast.success("Offer accepted successfully!");
                                 console.log(
                                   "Success:",
                                   data,
@@ -2259,6 +2309,7 @@ function LisitingPage({}: Props) {
               type="text"
               placeholder={formatPlaceholder()}
               className="border p-2 rounded-lg mr-5"
+              value={bidAmount}
               onChange={(e) => setBidAmount(e.target.value)}
             />
             <button
@@ -2276,6 +2327,7 @@ function LisitingPage({}: Props) {
 
 export default LisitingPage;
 
+
 ```
 
 ### In pages/create.tsx:
@@ -2283,7 +2335,6 @@ export default LisitingPage;
 ```
 import React, { FormEvent, useState } from "react";
 import { Header } from "../components";
-import Image from "next/image";
 import {
   useContract,
   useAddress,
@@ -2302,104 +2353,116 @@ import toast from "react-hot-toast";
 type Props = {};
 
 function create({}: Props) {
+  // Next JS Router hook to redirect to other pages
   const router = useRouter();
-  const [selectedNft, setSelectedNft] = useState<NFT>();
-  const address = useAddress();
+  // Connect to our marketplace contract
   const { contract: marketplaceContract } = useContract(
     process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT,
     "marketplace"
   );
+  // Hook for checking whether the connected wallet is on the correct network specified by the desiredChainId passed to the <ThirdwebProvider />.
+  const isNetworkMismatched = useNetworkMismatch();
+  // Hook for getting metadata about the network the current wallet is connected to and switching networks
+  const [, switchNetwork] = useNetwork();
+
+  const [selectedNft, setSelectedNft] = useState<NFT>();
+  const address = useAddress();
   const { contract: collectionContract } = useContract(
     process.env.NEXT_PUBLIC_COLLECTION_CONTRACT,
     "nft-collection"
   );
-  //   console.log(contract);
+
   //   console.log("The Address is:", address);
   const ownedNfts = useOwnedNFTs(collectionContract, address);
   //   console.log(ownedNfts);
   // console.log(selectedNft);
 
-  const networkMismatch = useNetworkMismatch();
-  const [, switchNetwork] = useNetwork();
-
-  const {
-    mutate: createDirectListing,
-    isLoading: isLoadingDirect,
-    error: errorDirect,
-  } = useCreateDirectListing(marketplaceContract);
-  const {
-    mutate: createAuctionListing,
-    isLoading: isLoadingAuction,
-    error: errorAuction,
-  } = useCreateAuctionListing(marketplaceContract);
+  // Use this to create a new Direct Listing on your marketplace contract.
+  const { mutate: createDirectListing } =
+    useCreateDirectListing(marketplaceContract);
+  // Use this to create a new Auction Listing on your marketplace contract.
+  const { mutate: createAuctionListing } =
+    useCreateAuctionListing(marketplaceContract);
 
   // handleCreateListing is called when the form is submitted.
   // User has provided: contract address, token id, type of listing (either auction or direct), price of NFT.
   const handleCreateListing = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    // Check if user on correct network. If not switch to correct network.
-    if (networkMismatch) {
-      switchNetwork && switchNetwork(network);
-      return;
-    }
-    if (!selectedNft) return;
+    try {
+      // Check if user on correct network. If not switch to correct network.
+      if (isNetworkMismatched) {
+        switchNetwork && switchNetwork(network);
+        return;
+      }
 
-    const target = e.target as typeof e.target & {
-      elements: { listingType: { value: string }; price: { value: string } };
-    };
+      // Prevent page from refreshing
+      e.preventDefault();
 
-    const { listingType, price } = target.elements;
+      if (!selectedNft) return;
 
-    if (listingType.value === "directListing") {
-      createDirectListing(
-        {
-          assetContractAddress: process.env.NEXT_PUBLIC_COLLECTION_CONTRACT!,
-          tokenId: selectedNft.metadata.id,
-          currencyContractAddress: NATIVE_TOKEN_ADDRESS,
-          listingDurationInSeconds: 60 * 60 * 24 * 7, //1 week
-          quantity: 1,
-          buyoutPricePerToken: price.value,
-          startTimestamp: new Date(),
-        },
-        {
+      const target = e.target as typeof e.target & {
+        elements: { listingType: { value: string }; price: { value: string } };
+      };
+      // De-construct data from form submission
+      const { listingType, price } = target.elements;
+
+      // Depending on the type of listing selected, call the appropriate function:
+
+      // For Direct Listings:
+      const directListingData = {
+        assetContractAddress: process.env.NEXT_PUBLIC_COLLECTION_CONTRACT!, // Contract Address of the NFT
+        buyoutPricePerToken: price.value, // Maximum price, the auction will end immediately if a user pays this price.
+        currencyContractAddress: NATIVE_TOKEN_ADDRESS, // NATIVE_TOKEN_ADDRESS is the crpyto curency that is native to the network. e.g. ETH, MATIC.
+        listingDurationInSeconds: 60 * 60 * 24 * 7, // When the auction will be closed and no longer accept bids (1 Week)
+        quantity: 1, // How many of the NFTs are being listed (useful for ERC 1155 tokens)
+        startTimestamp: new Date(), // When the listing will start
+        tokenId: selectedNft.metadata.id, // Token ID of the NFT.
+      };
+
+      if (listingType.value === "directListing") {
+        createDirectListing(directListingData, {
           onSuccess(data, variables, context) {
             console.log("Success:", data, variables, context);
-            toast.success("Direct Listing successfully created!");
+            alert("Direct Listing successfully created!");
+            // If the transaction succeeds, take the user back to the homepage to view their listing!
             router.push("/");
           },
           onError(error, variables, context) {
             console.log("Error:", error, variables, context);
-            toast.error("Error: Creating Direct Listing failed!");
+            alert("Error: Creating Direct Listing failed!");
+            // If the transaction fails, take the user back to the homepage!
             router.push("/");
           },
-        }
-      );
-    }
-    if (listingType.value === "auctionListing") {
-      createAuctionListing(
-        {
-          assetContractAddress: process.env.NEXT_PUBLIC_COLLECTION_CONTRACT!,
-          tokenId: selectedNft.metadata.id,
-          currencyContractAddress: NATIVE_TOKEN_ADDRESS,
-          listingDurationInSeconds: 60 * 60 * 24 * 7, //1 week
-          quantity: 1,
-          startTimestamp: new Date(),
-          buyoutPricePerToken: price.value,
-          reservePricePerToken: 0,
-        },
-        {
+        });
+      }
+
+      // For Auction Listings:
+      const auctionListingData = {
+        assetContractAddress: process.env.NEXT_PUBLIC_COLLECTION_CONTRACT!, // Contract Address of the NFT
+        buyoutPricePerToken: price.value, // Maximum price, the auction will end immediately if a user pays this price.
+        currencyContractAddress: NATIVE_TOKEN_ADDRESS, // NATIVE_TOKEN_ADDRESS is the crpyto curency that is native to the network. e.g. ETH, MATIC.
+        listingDurationInSeconds: 60 * 60 * 24 * 7, // When the auction will be closed and no longer accept bids (1 Week)
+        quantity: 1, // How many of the NFTs are being listed (useful for ERC 1155 tokens)
+        reservePricePerToken: 0, // Minimum price, users cannot bid below this amount
+        startTimestamp: new Date(), // When the listing will start
+        tokenId: selectedNft.metadata.id, // Token ID of the NFT.
+      };
+
+      if (listingType.value === "auctionListing") {
+        createAuctionListing(auctionListingData, {
           onSuccess(data, variables, context) {
             console.log("Success:", data, variables, context);
-            toast.success("Auction Listing successfully created!");
+            alert("Auction Listing successfully created!");
             router.push("/");
           },
           onError(error, variables, context) {
             console.log("Error:", error, variables, context);
-            toast.error("Error: Creating Auction Listing failed!");
+            alert("Error: Creating Auction Listing failed!");
             router.push("/");
           },
-        }
-      );
+        });
+      }
+    } catch (error) {
+      console.error(error);
     }
   };
   return (
@@ -2436,6 +2499,7 @@ function create({}: Props) {
         {selectedNft && (
           <form onSubmit={handleCreateListing}>
             <div className="flex flex-col p-10">
+              {/* Toggle between direct listing and auction listing */}
               <div className="grid grid-cols-2 gap-5">
                 <label className="border-r font-light">
                   Direct Listing / Fixed Price
@@ -2443,17 +2507,20 @@ function create({}: Props) {
                 <input
                   type="radio"
                   name="listingType"
+                  id="directListing"
                   value="directListing"
+                  defaultChecked
                   className="ml-auto h-10 w-10"
                 />
                 <label className="border-r font-light">Auction</label>
                 <input
                   type="radio"
                   name="listingType"
+                  id="auctionListing"
                   value="auctionListing"
                   className="ml-auto h-10 w-10"
                 />
-
+                {/* Sale Price For Listing Field */}
                 <label className="border-r font-light">Price</label>
                 <input
                   type="text"
@@ -2477,6 +2544,7 @@ function create({}: Props) {
 }
 
 export default create;
+
 
 ```
 
@@ -2603,6 +2671,5 @@ function addItem({}: Props) {
 }
 
 export default addItem;
-
 
 ```

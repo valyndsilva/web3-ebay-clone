@@ -48,19 +48,14 @@ function LisitingPage({}: Props) {
   );
   console.log({ listing });
 
-  const isNetworkMismatch = useNetworkMismatch();
+  // Hook for checking whether the connected wallet is on the correct network specified by the desiredChainId passed to the <ThirdwebProvider />.
+  const isNetworkMismatched = useNetworkMismatch();
+  // Hook for getting metadata about the network the current wallet is connected to and switching networks
   const [, switchNetwork] = useNetwork();
 
-  ////////
-
-  const address = useAddress();
-  console.log({ address });
-  const [minimumNextBid, setMinimumNextBid] = useState<{
-    displayValue: string;
-    symbol: string;
-  }>();
-
   // Direct Listing Type:
+  const address = useAddress();
+  // console.log({ address });
   // useBuyNow() is used to buy out an auction listing from your marketplace contract.
   const { mutate: buyNow } = useBuyNow(marketplaceContract);
   // useMakeOffer is used to make an offer on direct or auction listing from your marketplace contract.
@@ -70,6 +65,10 @@ function LisitingPage({}: Props) {
   console.log({ offers });
 
   // Auction Listing Type:
+  const [minimumNextBid, setMinimumNextBid] = useState<{
+    displayValue: string;
+    symbol: string;
+  }>();
   // useMakeBid is used to place a bid on an auction listing from your marketplace contract.
   const { mutate: makeBid } = useMakeBid(marketplaceContract);
   // Accept an offer on a direct listing from an offeror, will accept the latest offer by the given offeror.
@@ -117,7 +116,7 @@ function LisitingPage({}: Props) {
     toast("Buying NFT...");
 
     // Check if user on correct network. If not switch to correct network.
-    if (isNetworkMismatch) {
+    if (isNetworkMismatched) {
       switchNetwork && switchNetwork(network);
       return;
     }
@@ -146,7 +145,7 @@ function LisitingPage({}: Props) {
   const createBidOrOffer = async () => {
     try {
       // Check if user on correct network. If not switch to correct network.
-      if (isNetworkMismatch) {
+      if (isNetworkMismatched) {
         switchNetwork && switchNetwork(network);
         return;
       }
