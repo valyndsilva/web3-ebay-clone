@@ -9,6 +9,7 @@ import { ListingType } from "@thirdweb-dev/sdk";
 import { ClockIcon, BanknotesIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
 import { Toaster } from "react-hot-toast";
+import { Router, useRouter } from "next/router";
 
 const Home = () => {
   const { contract } = useContract(
@@ -17,7 +18,8 @@ const Home = () => {
   );
   const { data: listings, isLoading: loadingListings } =
     useActiveListings(contract);
-  console.log(listings);
+  console.log({ listings });
+  const router = useRouter();
   return (
     <div className="">
       <Head>
@@ -27,19 +29,21 @@ const Home = () => {
       <Header />
       <Toaster />
       <main className="max-w-6xl mx-auto py-2 px-6">
-        {loadingListings ? (
-          <p className="text-center animate-pulse text-blue-400">
-            Loading listings...
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 mx-auto">
-            {listings?.map((listing) => (
-              <Link
-                href={`/listing/${listing.id}`}
-                key={listing.id}
-                className="flex flex-col card hover:scale-105 transition-all duration-150 ease-out"
-              >
-                <div>
+        {
+          // If the listings are loading, show a loading message
+          loadingListings ? (
+            <p className="text-center animate-pulse text-blue-400">
+              Loading listings...
+            </p>
+          ) : (
+            // Otherwise, show the listings
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 mx-auto">
+              {listings?.map((listing) => (
+                <div
+                  key={listing.id}
+                  onClick={() => router.push(`/listing/${listing.id}`)}
+                  className="flex flex-col card hover:scale-105 transition-all duration-150 ease-out"
+                >
                   <div className="flex flex-1 flex-col pb-2 items-center">
                     <MediaRenderer src={listing.asset.image} className="w-60" />
                   </div>
@@ -77,10 +81,10 @@ const Home = () => {
                     </div>
                   </div>
                 </div>
-              </Link>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )
+        }
       </main>
     </div>
   );

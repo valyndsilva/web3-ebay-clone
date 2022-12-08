@@ -21,8 +21,6 @@ function addItem({}: Props) {
 
   const mintNft = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // console.log("mintNft Clicked!");
-
     if (!contract || !address) return;
     if (!image) {
       alert("Please select an image!");
@@ -34,22 +32,28 @@ function addItem({}: Props) {
     };
     const metadata = {
       name: target.name.value,
-      description: target.description.value,
+      description: target.description?.value,
       image: image,
     };
 
+    const notification = toast.loading("Minting NFT...");
+
     try {
-      toast("Minting NFT...");
       const tx = await contract.mintTo(address, metadata);
+      toast.success("NFT minted successfully!", {
+        id: notification,
+        duration: 6000,
+      });
       const receipt = tx.receipt; // transaction receipt
       const tokenId = tx.id; //id of NFT minted
       const nft = await tx.data(); //(optional) fetch details of minted NFT
       console.log(receipt, tokenId, nft);
-      toast.success("NFT minted successfully!");
       router.push("/");
     } catch (error) {
+      toast.error("NFT minting failed!", { id: notification, duration: 6000 });
       console.error(error);
-      toast.error("NFT minting failed!");
+    } finally {
+      toast.dismiss(notification);
     }
   };
   return (

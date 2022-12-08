@@ -1,5 +1,6 @@
 import { UserCircleIcon } from "@heroicons/react/24/solid";
 import {
+  useAddress,
   MediaRenderer,
   useContract,
   useListing,
@@ -9,7 +10,6 @@ import {
   useMakeOffer,
   useOffers,
   useMakeBid,
-  useAddress,
   useAcceptDirectListingOffer,
 } from "@thirdweb-dev/react";
 import { ListingType, NATIVE_TOKENS } from "@thirdweb-dev/sdk";
@@ -23,43 +23,66 @@ import toast from "react-hot-toast";
 type Props = {};
 
 function LisitingPage({}: Props) {
+  // Next JS Router hook to redirect to other pages and to grab the query from the URL (listingId)
   const router = useRouter();
-  const address = useAddress();
 
+  // De-construct listingId out of the router.query.
+  // This means that if the user visits /listing/0 then the listingId will be 0.
+  // If the user visits /listing/1 then the listingId will be 1.
+  // We do some weird TypeScript casting, because Next.JS thinks listingId can be an array for some reason.
   const { listingId } = router.query as { listingId: string };
+
+  // Store the bid amount the user entered into the bidding textbox
   const [bidAmount, setBidAmount] = useState("");
-  const [minimumNextBid, setMinimumNextBid] = useState<{
-    displayValue: string;
-    symbol: string;
-  }>();
 
-  const networkMismatch = useNetworkMismatch();
-  const [, switchNetwork] = useNetwork();
-
+  // Initialize the marketplace contract
   const { contract: marketplaceContract } = useContract(
     process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT,
     "marketplace"
   );
 
+  // useListing is used to get a specific listing from the marketplace
+  const { data: listing, isLoading: isListingLoading } = useListing(
+    marketplaceContract,
+    listingId
+  );
+  console.log({ listing });
+
+  const isNetworkMismatch = useNetworkMismatch();
+  const [, switchNetwork] = useNetwork();
+
+  ////////
+
+  const address = useAddress();
+  console.log({ address });
+  const [minimumNextBid, setMinimumNextBid] = useState<{
+    displayValue: string;
+    symbol: string;
+  }>();
+
+  // Direct Listing Type:
+  // useBuyNow() is used to buy out an auction listing from your marketplace contract.
   const { mutate: buyNow } = useBuyNow(marketplaceContract);
+  // useMakeOffer is used to make an offer on direct or auction listing from your marketplace contract.
   const { mutate: makeOffer } = useMakeOffer(marketplaceContract);
+  // useOffers is used to get all the offers for a listing
   const { data: offers } = useOffers(marketplaceContract, listingId);
-  // console.log(offers);
+  console.log({ offers });
+
+  // Auction Listing Type:
+  // useMakeBid is used to place a bid on an auction listing from your marketplace contract.
   const { mutate: makeBid } = useMakeBid(marketplaceContract);
+  // Accept an offer on a direct listing from an offeror, will accept the latest offer by the given offeror.
   const { mutate: acceptOffer } =
     useAcceptDirectListingOffer(marketplaceContract);
-  const {
-    data: listing,
-    isLoading,
-    error,
-  } = useListing(marketplaceContract, listingId);
 
+  // For Auction ListingType
   useEffect(() => {
     if (!listingId || !marketplaceContract || !listing) return;
     if (listing.type === ListingType.Auction) {
       fetchMinimumNextBid();
     }
-  }, [listingId, listing, marketplaceContract]);
+  }, [listingId, listing, marketplaceContract, bidAmount]);
 
   console.log(minimumNextBid);
 
@@ -67,6 +90,8 @@ function LisitingPage({}: Props) {
     if (!listingId || !marketplaceContract) return;
     const { displayValue, symbol } =
       await marketplaceContract.auction.getMinimumNextBid(listingId);
+    console.log(displayValue, symbol);
+
     setMinimumNextBid({
       displayValue: displayValue,
       symbol: symbol,
@@ -90,23 +115,26 @@ function LisitingPage({}: Props) {
 
   const buyNft = async () => {
     toast("Buying NFT...");
-    if (networkMismatch) {
+
+    // Check if user on correct network. If not switch to correct network.
+    if (isNetworkMismatch) {
       switchNetwork && switchNetwork(network);
       return;
     }
     if (!listingId || !marketplaceContract || !listing) return;
-    await buyNow(
+
+    buyNow(
       { id: listingId, buyAmount: 1, type: listing.type },
 
       {
         onSuccess(data, variables, context) {
-          // alert("NFT bought successfully!");
+          alert("NFT bought successfully!");
           toast.success("NFT bought successfully!");
           console.log("Success:", data, variables, context);
           router.replace("/");
         },
         onError(error, variables, context) {
-          // alert("ERROR: NFT  could not be bought!");
+          alert("ERROR: NFT  could not be bought!");
           toast.error("ERROR: NFT  could not be bought!");
           console.log("Error:", error, variables, context);
         },
@@ -114,87 +142,104 @@ function LisitingPage({}: Props) {
     );
   };
 
+  // Creating A Bid / Offer
   const createBidOrOffer = async () => {
     try {
       // Check if user on correct network. If not switch to correct network.
-      if (networkMismatch) {
+      if (isNetworkMismatch) {
         switchNetwork && switchNetwork(network);
         return;
       }
-      // Handle Direct Listing
+
+      // If the listing type is a direct listing, then we can create an offer.
       if (listing?.type === ListingType.Direct) {
+        console.log("Making Offer...");
+        // if buyout price is equal to bid amount then trigger "Buy now".
         if (
-          listing.buyoutPrice.toString() ===
-          ethers.utils.parseEther(bidAmount).toString()
+          ethers.utils.parseEther(bidAmount).toString() ===
+          listing.buyoutPrice.toString()
         ) {
           console.log("Buyout Price met, buying NFT...");
-          toast("Buyout Price met, buying NFT...");
+          alert("Buyout Price met, buying NFT...");
           buyNft();
           return;
+        } else {
+          // if buyout price is NOT equal to bid amount then trigger "make offer"
+          console.log("Buyout Price not met, making offer...");
+          alert("Buyout Price not met, making offer...");
+
+          // Create an offer on a direct listing:
+          makeOffer(
+            {
+              listingId: listingId, // The listing ID of the asset you want to offer on
+              quantity: 1, // The quantity of tokens you want to receive for this offer
+              pricePerToken: bidAmount, // The price you are willing to offer per token
+            },
+            {
+              onSuccess(data, variables, context) {
+                alert("Offer made successfully!");
+                toast.success("Offer made successfully!");
+                console.log("Success:", data, variables, context);
+                setBidAmount("");
+                router.replace("/");
+              },
+              onError(error, variables, context) {
+                alert("ERROR: Offer  could not be made!");
+                toast.error("ERROR: Offer  could not be made!");
+                console.log("Error:", error, variables, context);
+                router.replace("/");
+              },
+            }
+          );
         }
-        console.log("Buyout Price not met, making offer...");
-        toast("Buyout Price not met, making offer...");
-        await makeOffer(
-          {
-            quantity: 1,
-            listingId: listingId,
-            pricePerToken: bidAmount,
-          },
-          {
-            onSuccess(data, variables, context) {
-              // alert("Offer made successfully!");
-              toast.success("Offer made successfully!");
-              console.log("Success:", data, variables, context);
-              setBidAmount("");
-            },
-            onError(error, variables, context) {
-              // alert("ERROR: Offer  could not be made!");
-              toast.error("ERROR: Offer  could not be made!");
-              console.log("Error:", error, variables, context);
-            },
-          }
-        );
       }
-      // Handle Auction Listing
-      // If the user entered a bid amount that is equal to the buyout price it should trigger a buy now.
+
+      // If the listing type is an auction listing, then we can create a bid.
       if (listing?.type === ListingType.Auction) {
+        console.log("Making Bid...");
+        // if buyout price is equal to bid amount then trigger "Buy now".
         if (
-          listing.buyoutPrice.toString() ===
-          ethers.utils.parseEther(bidAmount).toString()
+          ethers.utils.parseEther(bidAmount).toString() ===
+          listing.buyoutPrice.toString()
         ) {
           console.log("Buyout Price met, buying NFT...");
-          toast("Buyout Price met, buying NFT...");
+          alert("Buyout Price met, buying NFT...");
           buyNft();
           return;
+        } else {
+          // if buyout price is NOT equal to bid amount then trigger "makeBid"
+          console.log("Buyout Price not met, making bid...");
+          alert("Buyout Price not met, making bid...");
+
+          makeBid(
+            {
+              listingId: listingId,
+              bid: bidAmount,
+            },
+            {
+              onSuccess(data, variables, context) {
+                alert("Bid made successfully!");
+                toast.success("Bid made successfully!");
+                console.log("Success:", data, variables, context);
+                setBidAmount("");
+                router.replace("/");
+              },
+              onError(error, variables, context) {
+                alert("ERROR: Bid  could not be made!");
+                toast.error("ERROR: Bid  could not be made!");
+                console.log("Error:", error, variables, context);
+                router.replace("/");
+              },
+            }
+          );
         }
-        console.log("Buyout Price not met, making bid...");
-        toast("Buyout Price not met, making bid...");
-        await makeBid(
-          {
-            listingId: listingId,
-            bid: bidAmount,
-          },
-          {
-            onSuccess(data, variables, context) {
-              // alert("Bid made successfully!");
-              toast.success("Bid made successfully!");
-              console.log("Success:", data, variables, context);
-              setBidAmount("");
-            },
-            onError(error, variables, context) {
-              // alert("ERROR: Bid  could not be made!");
-              toast.error("ERROR: Bid  could not be made!");
-              console.log("Error:", error, variables, context);
-            },
-          }
-        );
       }
     } catch (error) {
       console.error(error);
     }
   };
 
-  if (isLoading)
+  if (isListingLoading)
     return (
       <div>
         <Header />
@@ -203,6 +248,10 @@ function LisitingPage({}: Props) {
         </div>
       </div>
     );
+
+  if (!listingId || !marketplaceContract) {
+    return;
+  }
 
   if (!listing) {
     return <div>Listing not found!</div>;
@@ -244,6 +293,7 @@ function LisitingPage({}: Props) {
               Buy Now
             </button>
           </div>
+
           {/* If direct listing show offers here... */}
           {listing.type === ListingType.Direct && offers && (
             <div className="grid grid-cols-2 gap-y-2">
@@ -259,7 +309,7 @@ function LisitingPage({}: Props) {
                       "..." +
                       offer.offeror.slice(-5)}
                   </p>
-                  <div>
+                  <div className="flex items-center space-x-4">
                     <p
                       key={
                         offer.listingId +
@@ -281,8 +331,8 @@ function LisitingPage({}: Props) {
                             },
                             {
                               onSuccess(data, variables, context) {
-                                alert("Offer accepted successfully!");
-                                // toast.success("Offer accepted successfully!");
+                                // alert("Offer accepted successfully!");
+                                toast.success("Offer accepted successfully!");
                                 console.log(
                                   "Success:",
                                   data,
@@ -341,6 +391,7 @@ function LisitingPage({}: Props) {
               type="text"
               placeholder={formatPlaceholder()}
               className="border p-2 rounded-lg mr-5"
+              value={bidAmount}
               onChange={(e) => setBidAmount(e.target.value)}
             />
             <button

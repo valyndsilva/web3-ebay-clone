@@ -1453,8 +1453,8 @@ function LisitingPage({}: Props) {
 export default LisitingPage;
 
 ```
-
-When you Make an Offer > Buyout price not met, making an offer > Metamask prompts > Confirm > Approve token spend > Confirm
+Open a Direct Listings page:
+When you Make an Offer for ex: 0.00002 and click "Offer"> Buyout price not met, making an offer > Metamask prompts > Confirm > Approve token spend > Confirm
 
 When you Make a Bid > Buyout price not met, making a bid > Metamask prompts > Confirm > Approve token spend > Confirm
 
@@ -2480,7 +2480,7 @@ export default create;
 
 ```
 
-### In pages/create.tsx:
+### In pages/addItem.tsx:
 
 ```
 import React, { FormEvent, useState } from "react";
@@ -2506,8 +2506,6 @@ function addItem({}: Props) {
 
   const mintNft = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // console.log("mintNft Clicked!");
-
     if (!contract || !address) return;
     if (!image) {
       alert("Please select an image!");
@@ -2519,22 +2517,28 @@ function addItem({}: Props) {
     };
     const metadata = {
       name: target.name.value,
-      description: target.description.value,
+      description: target.description?.value,
       image: image,
     };
 
+    const notification = toast.loading("Minting NFT...");
+
     try {
-      toast("Minting NFT...");
       const tx = await contract.mintTo(address, metadata);
+      toast.success("NFT minted successfully!", {
+        id: notification,
+        duration: 6000,
+      });
       const receipt = tx.receipt; // transaction receipt
       const tokenId = tx.id; //id of NFT minted
       const nft = await tx.data(); //(optional) fetch details of minted NFT
       console.log(receipt, tokenId, nft);
-      toast.success("NFT minted successfully!");
       router.push("/");
     } catch (error) {
+      toast.error("NFT minting failed!", { id: notification, duration: 6000 });
       console.error(error);
-      toast.error("NFT minting failed!");
+    } finally {
+      toast.dismiss(notification);
     }
   };
   return (
@@ -2599,5 +2603,6 @@ function addItem({}: Props) {
 }
 
 export default addItem;
+
 
 ```
